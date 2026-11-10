@@ -1,0 +1,32 @@
+{% extends "layout.html" %}
+{% block content %}
+  <section class="content-section py-4 px-4 mb-4">
+    <h1 class="h2 mb-3">Delete post</h1>
+    <p>
+      Are you sure you want to delete <strong>{{ post.title }}</strong>?
+      Enter the author's password to confirm. This cannot be undone.
+    </p>
+
+    {% if error %}
+      <div class="alert alert-danger" role="alert">{{ error }}</div>
+    {% endif %}
+
+    <form action="{{ url_for('submit_delete_post_page', post_id=post.id) }}" method="post">
+      <input type="hidden" name="author" value="{{ post.author.username }}">
+      <div class="mb-3">
+        <label for="password" class="form-label">Author password</label>
+        <input id="password"
+               name="password"
+               type="password"
+               class="form-control"
+               minlength="8"
+               maxlength="128"
+               autocomplete="current-password"
+               required>
+      </div>
+      <button type="submit" class="btn btn-danger">Delete post</button>
+      <a class="btn btn-outline-secondary"
+         href="{{ url_for('post_page', post_id=post.id) }}">Cancel</a>
+    </form>
+  </section>
+{% endblock content %}

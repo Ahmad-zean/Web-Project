@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from pydantic import AliasPath, BaseModel, ConfigDict, Field, EmailStr
+from pydantic import AliasPath, BaseModel, ConfigDict, EmailStr, Field
 from datetime import datetime
 
 app = FastAPI()
@@ -9,7 +9,8 @@ class UserBase(BaseModel):
     email: EmailStr = Field(..., max_length=120)
 
 class UserCreate(UserBase):
-    pass
+    password: str = Field(..., min_length=8, max_length=128)
+
 
 class UserResponse(UserBase):
     model_config = ConfigDict(from_attributes=True)
@@ -23,7 +24,22 @@ class Post(BaseModel):
 
 
 class PostCreate(Post):
-    pass
+    password: str = Field(..., min_length=8, max_length=128)
+
+
+class PostUpdate(BaseModel):
+    author: str = Field(..., min_length=1, max_length=50)
+    password: str = Field(..., min_length=8, max_length=128)
+    title: str = Field(..., max_length=100)
+    content: str = Field(..., max_length=1000)
+
+
+class PostPatch(BaseModel):
+    author: str = Field(..., min_length=1, max_length=50)
+    password: str = Field(..., min_length=8, max_length=128)
+    title: str | None = Field(default=None, max_length=100)
+    content: str | None = Field(default=None, max_length=1000)
+
 
 class PostResponse(Post):
     model_config = ConfigDict(from_attributes=True)
