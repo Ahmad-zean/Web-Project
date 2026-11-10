@@ -65,7 +65,7 @@
       <nav class="navbar navbar-expand-md bg-steel fixed-top"
            data-bs-theme="dark">
         <div class="container">
-          <a class="navbar-brand me-4" href="#">FastAPI Blog</a>
+          <a class="navbar-brand me-4" href="{{ url_for('home') }}">FastAPI Blog</a>
           <button class="navbar-toggler"
                   type="button"
                   data-bs-toggle="collapse"
@@ -77,12 +77,13 @@
           </button>
           <div class="collapse navbar-collapse" id="navbarToggle">
             <div class="navbar-nav me-auto">
-              <a class="nav-link active" aria-current="page" href="#">Home</a>
+              <a class="nav-link{% if request.url.path in ['/', '/posts'] %} active{% endif %}"
+                 {% if request.url.path in ['/', '/posts'] %}aria-current="page"{% endif %}
+                 href="{{ url_for('home') }}">Home</a>
             </div>
             <!-- Navbar Right Side -->
             <div class="navbar-nav">
-              <a class="btn btn-outline-light mb-2 mb-md-0 me-md-2" href="#">Login</a>
-              <a class="btn btn-light mb-2 mb-md-0 me-md-3" href="#">Register</a>
+              <a class="nav-link me-md-3" href="{{ url_for('posts') }}">All Posts</a>
               <div class="nav-item dropdown">
                 <a class="nav-link dropdown-toggle"
                    href="#"
@@ -118,13 +119,18 @@
         </div>
         <aside class="col-md-4">
           <div class="content-section py-3 px-4 mb-4">
-            <h3>Our Sidebar</h3>
-            <p class="text-body-secondary">You can put any information here you'd like.</p>
+            <h3>FastAPI Blog</h3>
+            <p class="text-body-secondary">Lets make some amazing posts!</p>
             <ul class="list-group">
-              <li class="list-group-item">Latest Posts</li>
-              <li class="list-group-item">Announcements</li>
-              <li class="list-group-item">Calendars</li>
-              <li class="list-group-item">etc</li>
+              <li class="list-group-item">
+                <a href="{{ url_for('posts') }}">see all posts</a>
+              </li>
+              <li class="list-group-item">
+                <a href="{{ url_for('create_user_page') }}">Create user</a>
+              </li>
+              <li class="list-group-item">
+                <a href="{{ url_for('create_post_page') }}">Create post</a>
+              </li>
             </ul>
           </div>
         </aside>
@@ -134,7 +140,7 @@
     <footer class="mt-auto py-3 bg-body-tertiary border-top">
       <div class="container text-center">
         <p class="text-body-secondary mb-0">
-          © <span id="year"></span> Corey Schafer
+          © <span id="year"></span> FastAPI Blog
         </p>
       </div>
     </footer>

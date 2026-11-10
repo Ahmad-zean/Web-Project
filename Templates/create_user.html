@@ -1,0 +1,37 @@
+{% extends "layout.html" %}
+{% block content %}
+  <section class="content-section py-4 px-4 mb-4">
+    <h1 class="h2 mb-3">Create an account</h1>
+    <p class="text-body-secondary">Join the community to get started.</p>
+
+    {% if error %}
+      <div class="alert alert-danger" role="alert">{{ error }}</div>
+    {% endif %}
+
+    <form action="{{ url_for('submit_create_user_page') }}" method="post">
+      <div class="mb-3">
+        <label for="username" class="form-label">Username</label>
+        <input id="username"
+               name="username"
+               type="text"
+               class="form-control"
+               maxlength="50"
+               autocomplete="username"
+               value="{{ username }}"
+               required>
+      </div>
+      <div class="mb-3">
+        <label for="email" class="form-label">Email</label>
+        <input id="email"
+               name="email"
+               type="email"
+               class="form-control"
+               maxlength="120"
+               autocomplete="email"
+               value="{{ email }}"
+               required>
+      </div>
+      <button type="submit" class="btn btn-primary">Create account</button>
+    </form>
+  </section>
+{% endblock content %}

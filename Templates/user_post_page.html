@@ -1,0 +1,33 @@
+{% extends "layout.html" %}
+{% block content %}
+  <section class="content-section py-3 px-4 mb-4">
+    <div class="d-flex align-items-center gap-4">
+      <img class="rounded-circle article-img flex-shrink-0"
+           src="{{ user.image_path }}"
+           alt="{{ user.username }}'s profile picture"
+           width="64"
+           height="64">
+      <div>
+        <h1 class="h2 mb-1">{{ user.username }}</h1>
+      </div>
+    </div>
+  </section>
+
+  <h2 class="h3 mb-3">Posts by {{ user.username }}</h2>
+  {% for post in posts %}
+    <article class="content-section py-3 px-4 mb-4">
+      <div class="article-metadata mb-2">
+        <small class="text-body-secondary">{{ post.date_posted }}</small>
+      </div>
+      <h3>
+        <a class="article-title"
+           href="{{ url_for('post_page', post_id=post.id) }}">{{ post.title }}</a>
+      </h3>
+      <p class="article-content mb-0">{{ post.content }}</p>
+    </article>
+  {% else %}
+    <div class="content-section py-3 px-4 mb-4">
+      <p class="text-body-secondary mb-0">This user has not published any posts yet.</p>
+    </div>
+  {% endfor %}
+{% endblock content %}

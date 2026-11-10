@@ -1,0 +1,8 @@
+{% extends "layout.html" %}
+{% block content %}
+  <article class="content-section py-3 px-4 mb-4">
+    <h2 class="article-title">{{ status_code }}</h2>
+    <p class="article-content">{{ detail }}</p>
+    <a class="btn btn-outline-secondary" href="{{ url_for('home') }}">Back to Home</a>
+  </article>
+{% endblock content %}
