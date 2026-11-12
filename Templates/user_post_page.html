@@ -1,6 +1,8 @@
 {% extends "layout.html" %}
 {% block content %}
-  <section class="content-section py-3 px-4 mb-4">
+  <section class="content-section py-3 px-4 mb-4"
+           data-api-read-url="{{ request.url_for('read_user', user_id=user.id) }}"
+           data-api-resource="user">
     <div class="d-flex align-items-center gap-4">
       <img class="rounded-circle article-img flex-shrink-0"
            src="{{ user.image_path }}"
@@ -8,7 +10,7 @@
            width="64"
            height="64">
       <div>
-        <h1 class="h2 mb-1">{{ user.username }}</h1>
+        <h1 class="h2 mb-1" data-user-name>{{ user.username }}</h1>
       </div>
     </div>
   </section>

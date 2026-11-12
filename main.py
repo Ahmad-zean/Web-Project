@@ -1,23 +1,31 @@
-import hashlib
-import hmac
-import secrets
 from typing import Annotated
-from xml.etree.ElementInclude import include
 
 from sqlalchemy import inspect, select, text
 from sqlalchemy.orm import Session
-from unittest import result
 
 from fastapi import Depends, FastAPI, Request, HTTPException, Form, status
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.exceptions import HTTPException as StarletteHTTPException
-from schema import PostResponse, PostCreate, PostUpdate, PostPatch, UserResponse, UserCreate
-from datetime import datetime
+from schema import PostCreate, PostPatch, UserCreate
 import models
-from database import Base, engine, get_db
+from database import Base, engine, get_db, SessionLocal
 from pydantic import ValidationError
 from starlette.responses import RedirectResponse
+from Routers.Post import router as post_router
+from Routers.User import router as user_router
+from services import (
+    ACCESS_TOKEN_COOKIE,
+    ACCESS_TOKEN_EXPIRE_MINUTES,
+    authenticate_user,
+    authorize_post_owner,
+    create_access_token,
+    create_post_record,
+    get_user_from_access_token,
+    require_authenticated_user,
+    register_user,
+)
+
 Base.metadata.create_all(bind=engine)
 with engine.begin() as connection:
     user_columns = {column["name"] for column in inspect(connection).get_columns("users")}
@@ -26,9 +34,22 @@ with engine.begin() as connection:
 
 
 app = FastAPI()
+app.include_router(user_router)
+app.include_router(post_router)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 templates = Jinja2Templates(directory="Templates")
+
+
+@app.middleware("http")
+async def load_current_user(request: Request, call_next):
+    token = request.cookies.get(ACCESS_TOKEN_COOKIE)
+    request.state.current_user = None
+    if token:
+        with SessionLocal() as db:
+            request.state.current_user = get_user_from_access_token(token, db)
+    return await call_next(request)
+
 
 #error handler for 404 and other errors
 @app.exception_handler(StarletteHTTPException)
@@ -76,6 +97,8 @@ def edit_post_page(
     post = db.get(models.Post, post_id)
     if not post:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found")
+    user = require_authenticated_user(request, db)
+    authorize_post_owner(post, user)
     return templates.TemplateResponse(
         request,
         "edit_post.html",
@@ -93,8 +116,6 @@ def edit_post_page(
 def submit_edit_post_page(
     request: Request,
     post_id: int,
-    author: str = Form(),
-    password: str = Form(),
     title: str = Form(),
     content: str = Form(),
     db: Session = Depends(get_db),
@@ -102,12 +123,12 @@ def submit_edit_post_page(
     post = db.get(models.Post, post_id)
     if not post:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found")
+    user = require_authenticated_user(request, db)
+    authorize_post_owner(post, user)
 
     try:
         patch = PostPatch.model_validate(
             {
-                "author": author,
-                "password": password,
                 "title": title if title != post.title else None,
                 "content": content if content != post.content else None,
             }
@@ -130,21 +151,15 @@ def submit_edit_post_page(
         error = "Change the title or content before saving."
         response_status = status.HTTP_400_BAD_REQUEST
     else:
-        try:
-            _authorize_post_author(db, post, patch.author, patch.password)
-        except HTTPException as exc:
-            error = exc.detail
-            response_status = exc.status_code
-        else:
-            if patch.title is not None:
-                post.title = patch.title
-            if patch.content is not None:
-                post.content = patch.content
-            db.commit()
-            return RedirectResponse(
-                url=request.url_for("post_page", post_id=post.id),
-                status_code=status.HTTP_303_SEE_OTHER,
-            )
+        if patch.title is not None:
+            post.title = patch.title
+        if patch.content is not None:
+            post.content = patch.content
+        db.commit()
+        return RedirectResponse(
+            url=request.url_for("post_page", post_id=post.id),
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
 
     return templates.TemplateResponse(
         request,
@@ -169,6 +184,8 @@ def delete_post_page(
     post = db.get(models.Post, post_id)
     if not post:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found")
+    user = require_authenticated_user(request, db)
+    authorize_post_owner(post, user)
     return templates.TemplateResponse(
         request,
         "delete_post.html",
@@ -180,22 +197,13 @@ def delete_post_page(
 def submit_delete_post_page(
     request: Request,
     post_id: int,
-    author: str = Form(),
-    password: str = Form(),
     db: Session = Depends(get_db),
 ):
     post = db.get(models.Post, post_id)
     if not post:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found")
-    try:
-        _authorize_post_author(db, post, author, password)
-    except HTTPException as exc:
-        return templates.TemplateResponse(
-            request,
-            "delete_post.html",
-            {"post": post, "title": "Delete Post", "error": exc.detail},
-            status_code=exc.status_code,
-        )
+    user = require_authenticated_user(request, db)
+    authorize_post_owner(post, user)
     db.delete(post)
     db.commit()
     return RedirectResponse(
@@ -226,27 +234,30 @@ def user_post_page(
         {"posts": posts, "user": user, "title": f"{user.username}'s Posts"},
     )
 
-#user creation page
+#user registration page
+@app.get("/register", include_in_schema=False, name="register_page")
 @app.get("/users/create", include_in_schema=False, name="create_user_page")
 def create_user_page(request: Request):
     return templates.TemplateResponse(
         request,
         "create_user.html",
         {
-            "title": "Create User",
+            "title": "Register",
             "username": "",
             "email": "",
             "error": None,
         },
     )
 
-#fetch a database session and create a user via frontend form submission
-@app.post("/users/create", include_in_schema=False)
-def submit_create_user_page(
+#register a user via frontend form submission
+@app.post("/register", include_in_schema=False, name="submit_register_page")
+@app.post("/users/create", include_in_schema=False, name="submit_create_user_page")
+def submit_register_page(
     request: Request,
     username: str = Form(),
     email: str = Form(),
     password: str = Form(),
+    confirm_password: str = Form(),
     db: Session = Depends(get_db),
 ):
     try:
@@ -259,7 +270,7 @@ def submit_create_user_page(
             request,
             "create_user.html",
             {
-                "title": "Create User",
+                "title": "Register",
                 "username": username,
                 "email": email,
                 "error": exc.errors()[0]["msg"],
@@ -268,146 +279,99 @@ def submit_create_user_page(
         )
 
     try:
-        #pass both data to the function that checks if user exists and creates a new user if not
-        created_user = _create_user(user, db)
+        created_user = register_user(user, confirm_password, db)
     except HTTPException as exc:
         return templates.TemplateResponse(
             request,
             "create_user.html",
             {
-                "title": "Create User",
+                "title": "Register",
                 "username": username,
                 "email": email,
                 "error": exc.detail,
             },
             status_code=exc.status_code,
         )
-    return RedirectResponse(
-        url=request.url_for("user_post_page", user_id=created_user.id),
+    response = RedirectResponse(
+        url=request.url_for("home"),
         status_code=status.HTTP_303_SEE_OTHER,
     )
-
-#check if user exists and create user
-def _create_user(user: UserCreate, db: Session):
-    result_name = db.execute(
-        select(models.User).where(models.User.username == user.username)
+    response.set_cookie(
+        key=ACCESS_TOKEN_COOKIE,
+        value=create_access_token(created_user.id),
+        httponly=True,
+        secure=request.url.scheme == "https",
+        samesite="lax",
+        max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
     )
-    if result_name.scalars().first():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Username already exists",
-        )
+    return response
 
-    result_email = db.execute(
-        select(models.User).where(models.User.email == user.email)
+
+@app.get("/login", include_in_schema=False, name="login_page")
+def login_page(request: Request):
+    return templates.TemplateResponse(
+        request,
+        "login.html",
+        {"title": "Login", "identifier": "", "error": None},
     )
-    if result_email.scalars().first():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email already exists",
-        )
-
-    new_user = models.User(
-        username=user.username,
-        email=user.email,
-        password_hash=_hash_password(user.password),
-    )
-    db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
-    return new_user
-
-#hash the password using scrypt and return the hash
-def _hash_password(password: str) -> str:
-    salt = secrets.token_bytes(16)
-    password_hash = hashlib.scrypt(
-        password.encode("utf-8"),
-        salt=salt,
-        n=2**14,
-        r=8,
-        p=1,
-        dklen=64,
-    )
-    return f"scrypt${salt.hex()}${password_hash.hex()}"
 
 
-def _verify_password(password: str, stored_hash: str | None) -> bool:
-    if stored_hash is None:
-        return False
-
+@app.post("/login", include_in_schema=False, name="submit_login_page")
+def submit_login_page(
+    request: Request,
+    identifier: str = Form(),
+    password: str = Form(),
+    db: Session = Depends(get_db),
+):
     try:
-        algorithm, salt_hex, hash_hex = stored_hash.split("$")
-        salt = bytes.fromhex(salt_hex)
-        expected_hash = bytes.fromhex(hash_hex)
-    except ValueError:
-        return False
+        user = authenticate_user(identifier, password, db)
+    except HTTPException as exc:
+        return templates.TemplateResponse(
+            request,
+            "login.html",
+            {"title": "Login", "identifier": identifier, "error": exc.detail},
+            status_code=exc.status_code,
+        )
 
-    if algorithm != "scrypt" or len(expected_hash) != 64:
-        return False
-
-    actual_hash = hashlib.scrypt(
-        password.encode("utf-8"),
-        salt=salt,
-        n=2**14,
-        r=8,
-        p=1,
-        dklen=len(expected_hash),
+    response = RedirectResponse(
+        url=request.url_for("home"),
+        status_code=status.HTTP_303_SEE_OTHER,
     )
-    return hmac.compare_digest(actual_hash, expected_hash)
+    response.set_cookie(
+        key=ACCESS_TOKEN_COOKIE,
+        value=create_access_token(user.id),
+        httponly=True,
+        secure=request.url.scheme == "https",
+        samesite="lax",
+        max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+    )
+    return response
 
 
-def _authorize_post_author(
-    db: Session,
-    post: models.Post,
-    author: str,
-    password: str,
-) -> None:
-    user = db.execute(
-        select(models.User).where(models.User.username == author)
-    ).scalars().first()
-    if not user or post.user_id != user.id or not _verify_password(
-        password,
-        user.password_hash,
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid author or password for this post",
-        )
-
-
-#route to create a user via API
-@app.post(
-    "/api/Users",
-    response_model=UserResponse,
-    status_code=status.HTTP_201_CREATED,
-)
-def create_user(user: UserCreate, db: Session = Depends(get_db)):
-    return _create_user(user, db)
-
-#route to get a user via API
-@app.get("/api/Users/{user_id}", response_model=UserResponse)
-def read_user(user_id: int, db: Session = Depends(get_db)):
-    result = db.execute(select(models.User).where(models.User.id == user_id))
-    user = result.scalars().first()
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found",
-        )
-    return user
-
+@app.post("/logout", include_in_schema=False, name="logout")
+def logout(request: Request):
+    response = RedirectResponse(
+        url=request.url_for("home"),
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
+    response.delete_cookie(
+        ACCESS_TOKEN_COOKIE,
+        httponly=True,
+        secure=request.url.scheme == "https",
+        samesite="lax",
+    )
+    return response
 
 #create post page
 @app.get("/post/create", include_in_schema=False, name="create_post_page")
 def create_post_page(request: Request, db: Session = Depends(get_db)):
-    users = db.execute(select(models.User).order_by(models.User.username)).scalars().all()
+    user = require_authenticated_user(request, db)
     return templates.TemplateResponse(
         request,
         "create_post.html",
         {
             "title": "Create Post",
-            "users": users,
-            "author": "",
+            "author": user.username,
             "post_title": "",
             "content": "",
             "error": None,
@@ -418,30 +382,25 @@ def create_post_page(request: Request, db: Session = Depends(get_db)):
 @app.post("/post/create", include_in_schema=False)
 def submit_create_post_page(
     request: Request,
-    author: str = Form(),
-    password: str = Form(),
     title: str = Form(),
     content: str = Form(),
     db: Session = Depends(get_db),
 ):
+    user = require_authenticated_user(request, db)
     try:
         post = PostCreate.model_validate(
             {
-                "author": author,
-                "password": password,
                 "title": title,
                 "content": content,
             }
         )
     except ValidationError as exc:
-        users = db.execute(select(models.User).order_by(models.User.username)).scalars().all()
         return templates.TemplateResponse(
             request,
             "create_post.html",
             {
                 "title": "Create Post",
-                "users": users,
-                "author": author,
+                "author": user.username,
                 "post_title": title,
                 "content": content,
                 "error": exc.errors()[0]["msg"],
@@ -450,16 +409,14 @@ def submit_create_post_page(
         )
 
     try:
-        new_post = _create_post(post, db)
+        new_post = create_post_record(post, user, db)
     except HTTPException as exc:
-        users = db.execute(select(models.User).order_by(models.User.username)).scalars().all()
         return templates.TemplateResponse(
             request,
             "create_post.html",
             {
                 "title": "Create Post",
-                "users": users,
-                "author": author,
+                "author": user.username,
                 "post_title": title,
                 "content": content,
                 "error": exc.detail,
@@ -470,99 +427,3 @@ def submit_create_post_page(
         url=request.url_for("post_page", post_id=new_post.id),
         status_code=status.HTTP_303_SEE_OTHER,
     )
-
-#pass the post data and database session to the function that checks if the author exists and creates a new post if so
-def _create_post(post: PostCreate, db: Session):
-    result = db.execute(select(models.User).where(models.User.username == post.author))
-    user = result.scalars().first()
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Author not found",
-        )
-    if not _verify_password(post.password, user.password_hash):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid author or password",
-        )
-    new_post = models.Post(
-        author=user,
-        title=post.title,
-        content=post.content,
-    )
-    db.add(new_post)
-    db.commit()
-    db.refresh(new_post)
-    return new_post
-
-#route to create a post via API documentation
-@app.post("/api/Posts", response_model=PostResponse, status_code= status.HTTP_201_CREATED)
-def create_post(post: PostCreate, db: Session = Depends(get_db)):
-    return _create_post(post, db)
-
-
-#route to get a post via API documentation
-@app.get("/api/Posts/{post_id}", response_model=PostResponse)
-def read_post(post_id: int, db: Session = Depends(get_db)):
-    result = db.execute(select(models.Post).where(models.Post.id == post_id))
-    post = result.scalars().first()
-    if not post:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Post not found",
-        )
-    return post
-
-@app.delete("/api/Posts/{post_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_post(post_id: int, db: Session = Depends(get_db)):
-    result = db.execute(select(models.Post).where(models.Post.id == post_id))
-    post = result.scalars().first()
-    if not post:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Post not found",
-        )
-    db.delete(post)
-    db.commit()
-
-@app.put("/api/Posts/{post_id}", response_model=PostResponse)
-def update_full_post(
-    post_id: int,
-    post_data: PostUpdate,
-    db: Session = Depends(get_db),
-):
-    result = db.execute(select(models.Post).where(models.Post.id == post_id ))
-    post = result.scalars().first()
-    if not post:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Post not found",
-        )
-    _authorize_post_author(db, post, post_data.author, post_data.password)
-    post.title = post_data.title
-    post.content = post_data.content
-    db.commit()
-    db.refresh(post)
-    return post
-
-@app.patch("/api/Posts/{post_id}", response_model=PostResponse)
-def update_partial_post(
-    post_id: int,
-    post_data: PostPatch,
-    db: Session = Depends(get_db),
-):
-    result = db.execute(select(models.Post).where(models.Post.id == post_id))
-    post = result.scalars().first()
-    if not post:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Post not found",
-        )
-    _authorize_post_author(db, post, post_data.author, post_data.password)
-    if post_data.title is not None:
-        post.title = post_data.title
-    if post_data.content is not None:
-        post.content = post_data.content
-    db.commit()
-    db.refresh(post)
-    return post

@@ -1,48 +1,66 @@
-from fastapi import FastAPI
-from pydantic import AliasPath, BaseModel, ConfigDict, EmailStr, Field
 from datetime import datetime
 
-app = FastAPI()
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
+
 
 class UserBase(BaseModel):
-    username: str = Field(..., max_length=50)
-    email: EmailStr = Field(..., max_length=120)
+    username: str = Field(min_length=1, max_length=50)
+    email: EmailStr = Field(max_length=120)
+
 
 class UserCreate(UserBase):
-    password: str = Field(..., min_length=8, max_length=128)
+    password: str = Field(min_length=8, max_length=128)
 
 
-class UserResponse(UserBase):
+class UserPublic(BaseModel):
     model_config = ConfigDict(from_attributes=True)
+
     id: int
-    image_file: str | None = None
-
-class Post(BaseModel):
-    author: str = Field(..., max_length=50)
-    title: str = Field(..., max_length=100)
-    content: str = Field(..., max_length=1000)
+    username: str
+    image_file: str | None
+    image_path: str
 
 
-class PostCreate(Post):
-    password: str = Field(..., min_length=8, max_length=128)
+class UserPrivate(UserPublic):
+    email: EmailStr
 
 
-class PostUpdate(BaseModel):
-    author: str = Field(..., min_length=1, max_length=50)
-    password: str = Field(..., min_length=8, max_length=128)
-    title: str = Field(..., max_length=100)
-    content: str = Field(..., max_length=1000)
+class UserUpdate(BaseModel):
+    username: str | None = Field(default=None, min_length=1, max_length=50)
+    email: EmailStr | None = Field(default=None, max_length=120)
+    image_file: str | None = Field(default=None, min_length=1, max_length=200)
+
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+
+
+class PostBase(BaseModel):
+    title: str = Field(min_length=1, max_length=100)
+    content: str = Field(min_length=1)
+
+
+class PostCreate(PostBase):
+    pass
+
+
+class PostUpdate(PostBase):
+    pass
 
 
 class PostPatch(BaseModel):
-    author: str = Field(..., min_length=1, max_length=50)
-    password: str = Field(..., min_length=8, max_length=128)
-    title: str | None = Field(default=None, max_length=100)
-    content: str | None = Field(default=None, max_length=1000)
+    title: str | None = Field(default=None, min_length=1, max_length=100)
+    content: str | None = Field(default=None, min_length=1)
 
 
-class PostResponse(Post):
+class PostResponse(PostBase):
     model_config = ConfigDict(from_attributes=True)
-    author: str = Field(validation_alias=AliasPath("author", "username"))
+
     id: int
+    user_id: int
     date_posted: datetime
+    author: UserPublic
+
+
+UserResponse = UserPublic

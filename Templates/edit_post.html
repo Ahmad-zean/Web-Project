@@ -3,26 +3,18 @@
   <section class="content-section py-4 px-4 mb-4">
     <h1 class="h2 mb-3">Edit post</h1>
     <p class="text-body-secondary">
-      Leave a field unchanged to keep its current value. Confirm with the author's password.
+      Leave a field unchanged to keep its current value. Only you can edit your post.
     </p>
 
     {% if error %}
       <div class="alert alert-danger" role="alert">{{ error }}</div>
     {% endif %}
 
-    <form action="{{ url_for('submit_edit_post_page', post_id=post.id) }}" method="post">
-      <input type="hidden" name="author" value="{{ post.author.username }}">
-      <div class="mb-3">
-        <label for="password" class="form-label">Author password</label>
-        <input id="password"
-               name="password"
-               type="password"
-               class="form-control"
-               minlength="8"
-               maxlength="128"
-               autocomplete="current-password"
-               required>
-      </div>
+    <form action="{{ url_for('submit_edit_post_page', post_id=post.id) }}"
+          method="post"
+          data-api-url="{{ request.url_for('update_full_post', post_id=post.id) }}"
+          data-api-method="PUT"
+          data-redirect-url="{{ request.url_for('post_page', post_id=post.id) }}">
       <div class="mb-3">
         <label for="title" class="form-label">Title</label>
         <input id="title"

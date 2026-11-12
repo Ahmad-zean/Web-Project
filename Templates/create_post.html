@@ -2,43 +2,19 @@
 {% block content %}
   <section class="content-section py-4 px-4 mb-4">
     <h1 class="h2 mb-3">Create a post</h1>
-    <div class="alert alert-warning" role="alert">
-      To publish a post, create a user first and select that user as the author.
-      Posts will be published under the selected user's username.
-      {% if not users %}
-        <a href="{{ url_for('create_user_page') }}" class="alert-link">Create a user account</a>
-        before continuing.
-      {% endif %}
-    </div>
+    <p class="text-body-secondary">
+      Posting as <strong>{{ author }}</strong>.
+    </p>
 
     {% if error %}
       <div class="alert alert-danger" role="alert">{{ error }}</div>
     {% endif %}
 
-    <form action="{{ url_for('submit_create_post_page') }}" method="post">
-      <div class="mb-3">
-        <label for="author" class="form-label">Author</label>
-        <select id="author" name="author" class="form-select" required {% if not users %}disabled{% endif %}>
-          <option value="" disabled {% if not author %}selected{% endif %}>Choose your user</option>
-          {% for user in users %}
-            <option value="{{ user.username }}" {% if author == user.username %}selected{% endif %}>
-              {{ user.username }}
-            </option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="mb-3">
-        <label for="password" class="form-label">Author password</label>
-        <input id="password"
-               name="password"
-               type="password"
-               class="form-control"
-               minlength="8"
-               maxlength="128"
-               autocomplete="current-password"
-               required>
-        <div class="form-text">Enter the password for the selected author.</div>
-      </div>
+    <form action="{{ url_for('submit_create_post_page') }}"
+          method="post"
+          data-api-url="{{ request.url_for('create_post') }}"
+          data-api-method="POST"
+          data-redirect-template="{{ request.url_for('post_page', post_id=0) }}">
       <div class="mb-3">
         <label for="title" class="form-label">Title</label>
         <input id="title"
@@ -58,9 +34,7 @@
                   maxlength="1000"
                   required>{{ content }}</textarea>
       </div>
-      <button type="submit" class="btn btn-primary" {% if not users %}disabled{% endif %}>
-        Publish post
-      </button>
+      <button type="submit" class="btn btn-primary">Publish post</button>
     </form>
   </section>
 {% endblock content %}

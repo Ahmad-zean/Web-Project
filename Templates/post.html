@@ -1,6 +1,8 @@
 {% extends "layout.html" %}
 {% block content %}
-  <article class="content-section py-3 px-4 mb-4">
+  <article class="content-section py-3 px-4 mb-4"
+           data-api-read-url="{{ request.url_for('read_post', post_id=post.id) }}"
+           data-api-resource="post">
     <div class="d-flex align-items-start gap-4">
       <img class="rounded-circle article-img flex-shrink-0"
            src="{{ post.author.image_path }}"
@@ -10,18 +12,20 @@
            loading="lazy">
       <div class="flex-grow-1">
         <div class="article-metadata mb-2">
-          <a class="me-2"
+          <a class="me-2" data-post-author
              href="{{ url_for('user_post_page', user_id=post.user_id) }}">{{ post.author.username }}</a>
-          <small class="text-body-secondary">{{ post.date_posted }}</small>
+          <small class="text-body-secondary" data-post-date>{{ post.date_posted }}</small>
         </div>
-        <h2 class="article-title">{{ post.title }}</h2>
-        <p class="article-content">{{ post.content }}</p>
-        <div class="d-flex gap-2 mt-3">
-          <a class="btn btn-outline-primary"
-             href="{{ url_for('edit_post_page', post_id=post.id) }}">Edit post</a>
-          <a class="btn btn-outline-danger"
-             href="{{ url_for('delete_post_page', post_id=post.id) }}">Delete post</a>
-        </div>
+        <h2 class="article-title" data-post-title>{{ post.title }}</h2>
+        <p class="article-content" data-post-content>{{ post.content }}</p>
+        {% if request.state.current_user and request.state.current_user.id == post.user_id %}
+          <div class="d-flex gap-2 mt-3">
+            <a class="btn btn-outline-primary"
+               href="{{ url_for('edit_post_page', post_id=post.id) }}">Edit post</a>
+            <a class="btn btn-outline-danger"
+               href="{{ url_for('delete_post_page', post_id=post.id) }}">Delete post</a>
+          </div>
+        {% endif %}
       </div>
     </div>
   </article>
