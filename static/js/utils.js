@@ -85,7 +85,7 @@ document.querySelectorAll("[data-api-read-url]").forEach(async (element) => {
     const result = await readApiResponse(response);
 
     if (element.dataset.apiResource === "post") {
-      element.querySelector("[data-post-author]").textContent = result.author;
+      element.querySelector("[data-post-author]").textContent = result.author.username;
       element.querySelector("[data-post-title]").textContent = result.title;
       element.querySelector("[data-post-content]").textContent = result.content;
       element.querySelector("[data-post-date]").textContent = result.date_posted;

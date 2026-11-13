@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 import models
 from config import settings
-from schema import PostCreate, UserCreate
+from schema import PostCreate, UserCreate, UserUpdate
 
 ACCESS_TOKEN_COOKIE = "access_token"
 ACCESS_TOKEN_EXPIRE_MINUTES = settings.access_token_expire_minutes
@@ -65,6 +65,61 @@ def register_user(
             detail="Passwords do not match",
         )
     return create_user_record(user, db)
+
+
+def update_user_account(
+    user: models.User,
+    profile: UserUpdate,
+    db: Session,
+    *,
+    password_hash: str | None = None,
+    image_file: str | None = None,
+) -> models.User:
+    if profile.username is not None:
+        existing_username = db.execute(
+            select(models.User).where(
+                models.User.username == profile.username,
+                models.User.id != user.id,
+            )
+        ).scalars().first()
+        if existing_username:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Username already exists",
+            )
+
+    if profile.email is not None:
+        existing_email = db.execute(
+            select(models.User).where(
+                models.User.email == profile.email,
+                models.User.id != user.id,
+            )
+        ).scalars().first()
+        if existing_email:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email already exists",
+            )
+
+    if profile.username is not None:
+        user.username = profile.username
+    if profile.email is not None:
+        user.email = profile.email
+    if password_hash is not None:
+        user.password_hash = password_hash
+    if image_file is not None:
+        user.image_file = image_file
+
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Username or email already exists",
+        ) from exc
+    db.refresh(user)
+    return user
 
 
 def authenticate_user(

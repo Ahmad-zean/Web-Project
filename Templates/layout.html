@@ -83,9 +83,9 @@
             </div>
             <!-- Navbar Right Side -->
             <div class="navbar-nav">
-              <a class="nav-link me-md-3" href="{{ url_for('posts') }}">All Posts</a>
               {% if request.state.current_user %}
                 <span class="navbar-text me-md-3">{{ request.state.current_user.username }}</span>
+                <a class="nav-link me-md-3" href="{{ url_for('account_page') }}">Account</a>
                 <form action="{{ url_for('logout') }}" method="post" class="d-inline">
                   <button type="submit" class="nav-link border-0 bg-transparent">Logout</button>
                 </form>
@@ -132,18 +132,13 @@
             <p class="text-body-secondary">Lets make some amazing posts!</p>
             <ul class="list-group">
               <li class="list-group-item">
-                <a href="{{ url_for('posts') }}">see all posts</a>
+                <a href="{{ url_for('posts') }}">Latest Posts</a>
               </li>
-              <li class="list-group-item">
-                <a href="{{ url_for('register_page') }}">Register</a>
-              </li>
-              <li class="list-group-item">
-                {% if request.state.current_user %}
+              {% if request.state.current_user %}
+                <li class="list-group-item">
                   <a href="{{ url_for('create_post_page') }}">Create post</a>
-                {% else %}
-                  <a href="{{ url_for('login_page') }}">Login to create a post</a>
-                {% endif %}
-              </li>
+                </li>
+              {% endif %}
             </ul>
           </div>
         </aside>
@@ -190,6 +185,6 @@
       // Initialize
       setTheme(localStorage.getItem('theme') || 'auto');
     </script>
-    <script src="/static/js/utils.js"></script>
+    <script src="/static/js/utils.js?v=2"></script>
   </body>
 </html>

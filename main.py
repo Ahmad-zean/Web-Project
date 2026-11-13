@@ -1,13 +1,18 @@
+import logging
+from io import BytesIO
+from pathlib import Path
 from typing import Annotated
+from uuid import uuid4
 
 from sqlalchemy import inspect, select, text
 from sqlalchemy.orm import Session
 
-from fastapi import Depends, FastAPI, Request, HTTPException, Form, status
+from fastapi import Depends, FastAPI, Request, HTTPException, Form, File, UploadFile, status
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from PIL import Image, ImageOps, UnidentifiedImageError
 from starlette.exceptions import HTTPException as StarletteHTTPException
-from schema import PostCreate, PostPatch, UserCreate
+from schema import PasswordChange, PostCreate, PostPatch, UserCreate, UserUpdate
 import models
 from database import Base, engine, get_db, SessionLocal
 from pydantic import ValidationError
@@ -22,9 +27,20 @@ from services import (
     create_access_token,
     create_post_record,
     get_user_from_access_token,
+    get_request_user,
+    hash_password,
     require_authenticated_user,
     register_user,
+    update_user_account,
+    verify_password,
 )
+
+logger = logging.getLogger(__name__)
+APP_DIR = Path(__file__).resolve().parent
+MEDIA_DIR = APP_DIR / "media"
+PROFILE_PICS_DIR = MEDIA_DIR / "profile_pics"
+MAX_PROFILE_PICTURE_BYTES = 5 * 1024 * 1024
+MAX_PROFILE_PICTURE_DIMENSION = 4096
 
 Base.metadata.create_all(bind=engine)
 with engine.begin() as connection:
@@ -37,8 +53,79 @@ app = FastAPI()
 app.include_router(user_router)
 app.include_router(post_router)
 app.mount("/static", StaticFiles(directory="static"), name="static")
+PROFILE_PICS_DIR.mkdir(parents=True, exist_ok=True)
+app.mount("/media", StaticFiles(directory=str(MEDIA_DIR)), name="media")
 
 templates = Jinja2Templates(directory="Templates")
+
+
+def remove_profile_picture(filename: str) -> None:
+    if not filename or Path(filename).name != filename:
+        return
+    try:
+        (PROFILE_PICS_DIR / filename).unlink(missing_ok=True)
+    except OSError:
+        logger.exception("Could not remove profile picture %s", filename)
+
+
+def store_profile_picture(upload: UploadFile) -> str:
+    contents = upload.file.read(MAX_PROFILE_PICTURE_BYTES + 1)
+    if len(contents) > MAX_PROFILE_PICTURE_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="Profile pictures must be 5 MB or smaller.",
+        )
+
+    try:
+        with Image.open(BytesIO(contents)) as image:
+            image_format = image.format
+            if image_format not in {"JPEG", "PNG", "WEBP"}:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Upload a JPEG, PNG, or WebP image.",
+                )
+            if (
+                image.width > MAX_PROFILE_PICTURE_DIMENSION
+                or image.height > MAX_PROFILE_PICTURE_DIMENSION
+                or image.width * image.height > 16_000_000
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Profile picture dimensions are too large.",
+                )
+            image.verify()
+
+        with Image.open(BytesIO(contents)) as image:
+            image = ImageOps.exif_transpose(image)
+            if image_format == "JPEG" and image.mode not in {"RGB", "L"}:
+                image = image.convert("RGB")
+            elif image_format == "WEBP" and image.mode not in {"RGB", "RGBA"}:
+                image = image.convert("RGB")
+            output = BytesIO()
+            image.save(output, format=image_format)
+    except (
+        UnidentifiedImageError,
+        OSError,
+        ValueError,
+        Image.DecompressionBombError,
+    ) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The uploaded file is not a valid image.",
+        ) from exc
+
+    extension = {"JPEG": "jpg", "PNG": "png", "WEBP": "webp"}[image_format]
+    filename = f"{uuid4().hex}.{extension}"
+    try:
+        with (PROFILE_PICS_DIR / filename).open("xb") as image_file:
+            image_file.write(output.getvalue())
+    except OSError as exc:
+        remove_profile_picture(filename)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not save the profile picture.",
+        ) from exc
+    return filename
 
 
 @app.middleware("http")
@@ -362,7 +449,173 @@ def logout(request: Request):
     )
     return response
 
-#create post page
+
+@app.get("/account", include_in_schema=False, name="account_page")
+def account_page(
+    request: Request,
+    db: Session = Depends(get_db),
+    updated: bool = False,
+):
+    user = get_request_user(request, db)
+    if not user:
+        return RedirectResponse(
+            url=request.url_for("login_page"),
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+    return render_account_page(
+        request,
+        user,
+        username=user.username,
+        email=user.email,
+        success="Your account has been updated." if updated else None,
+    )
+
+
+def render_account_page(
+    request: Request,
+    user: models.User,
+    *,
+    username: str,
+    email: str,
+    error: str | None = None,
+    success: str | None = None,
+    status_code: int = status.HTTP_200_OK,
+):
+    return templates.TemplateResponse(
+        request,
+        "account.html",
+        {
+            "title": "Account",
+            "user": user,
+            "username": username,
+            "email": email,
+            "error": error,
+            "success": success,
+        },
+        status_code=status_code,
+    )
+
+
+@app.post("/account", include_in_schema=False, name="update_account_page")
+def update_account_page(
+    request: Request,
+    username: str = Form(),
+    email: str = Form(),
+    current_password: str = Form(default=""),
+    new_password: str = Form(default=""),
+    confirm_password: str = Form(default=""),
+    profile_picture: UploadFile | None = File(default=None),
+    db: Session = Depends(get_db),
+):
+    user = get_request_user(request, db)
+    if not user:
+        return RedirectResponse(
+            url=request.url_for("login_page"),
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+
+    try:
+        profile = UserUpdate.model_validate(
+            {"username": username.strip(), "email": email.strip()}
+        )
+    except ValidationError as exc:
+        return render_account_page(
+            request,
+            user,
+            username=username,
+            email=email,
+            error=exc.errors()[0]["msg"],
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        )
+
+    password_hash = None
+    if current_password or new_password or confirm_password:
+        try:
+            password_change = PasswordChange.model_validate(
+                {
+                    "current_password": current_password,
+                    "new_password": new_password,
+                    "confirm_password": confirm_password,
+                }
+            )
+        except ValidationError as exc:
+            return render_account_page(
+                request,
+                user,
+                username=username,
+                email=email,
+                error=exc.errors()[0]["msg"],
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            )
+
+        if password_change.new_password != password_change.confirm_password:
+            return render_account_page(
+                request,
+                user,
+                username=username,
+                email=email,
+                error="The new password and confirmation do not match.",
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+        if not verify_password(password_change.current_password, user.password_hash):
+            return render_account_page(
+                request,
+                user,
+                username=username,
+                email=email,
+                error="The current password is incorrect.",
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+        password_hash = hash_password(password_change.new_password)
+
+    new_image_file = None
+    if profile_picture and profile_picture.filename:
+        try:
+            new_image_file = store_profile_picture(profile_picture)
+        except HTTPException as exc:
+            return render_account_page(
+                request,
+                user,
+                username=username,
+                email=email,
+                error=exc.detail,
+                status_code=exc.status_code,
+            )
+
+    old_image_file = user.image_file
+    update_succeeded = False
+    try:
+        try:
+            update_user_account(
+                user,
+                profile,
+                db,
+                password_hash=password_hash,
+                image_file=new_image_file,
+            )
+        except HTTPException as exc:
+            return render_account_page(
+                request,
+                user,
+                username=username,
+                email=email,
+                error=exc.detail,
+                status_code=exc.status_code,
+            )
+        update_succeeded = True
+    finally:
+        if new_image_file and not update_succeeded:
+            remove_profile_picture(new_image_file)
+
+    if new_image_file and old_image_file:
+        remove_profile_picture(old_image_file)
+
+    return RedirectResponse(
+        url=request.url_for("account_page").include_query_params(updated="1"),
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
+
+
 @app.get("/post/create", include_in_schema=False, name="create_post_page")
 def create_post_page(request: Request, db: Session = Depends(get_db)):
     user = require_authenticated_user(request, db)
@@ -377,6 +630,7 @@ def create_post_page(request: Request, db: Session = Depends(get_db)):
             "error": None,
         },
     )
+
 
 #fetch a database session and create a post via frontend form submission
 @app.post("/post/create", include_in_schema=False)
