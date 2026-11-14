@@ -1,4 +1,14 @@
-PyJWT>=2.8,<3
-pydantic-settings>=2.0,<3
-python-dotenv>=1.0,<2
+alembic>=1.13,<2
+email-validator>=2.0,<3
+fastapi>=0.115,<1
+jinja2>=3.1,<4
 Pillow>=10,<13
+psycopg[binary]>=3.2,<4
+PyJWT>=2.8,<3
+pydantic>=2.0,<3
+pydantic-settings>=2.0,<3
+pytest>=8,<10
+python-dotenv>=1.0,<2
+python-multipart>=0.0.9,<1
+SQLAlchemy>=2.0,<3
+uvicorn[standard]>=0.30,<1

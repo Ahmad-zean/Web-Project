@@ -16,6 +16,59 @@
   </section>
 
   <h2 class="h3 mb-3">Posts by {{ user.username }}</h2>
+  <form class="content-section browse-search p-3 mb-4"
+        action="{{ url_for('user_post_page', user_id=user.id) }}"
+        method="get">
+    <div class="row g-2">
+      <div class="col-md-5">
+        <label class="visually-hidden" for="search-user-posts">Search posts</label>
+        <input id="search-user-posts"
+               class="form-control"
+               type="search"
+               name="q"
+               value="{{ q }}"
+               maxlength="100"
+               placeholder="Search posts">
+      </div>
+      <div class="col-md-3">
+        <label class="visually-hidden" for="filter-user-category">Filter by category</label>
+        <select id="filter-user-category" class="form-select" name="category">
+          <option value="">All categories</option>
+          {% for category in categories %}
+            <option value="{{ category.slug }}"
+                    {% if selected_category == category.slug %}selected{% endif %}>
+              {{ category.name }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="visually-hidden" for="filter-user-tag">Filter by tag</label>
+        <select id="filter-user-tag" class="form-select" name="tag">
+          <option value="">All tags</option>
+          {% for tag in tags %}
+            <option value="{{ tag.slug }}"
+                    {% if selected_tag == tag.slug %}selected{% endif %}>
+              {{ tag.name }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2 d-flex align-items-center justify-content-md-end gap-2">
+        <button class="btn btn-primary search-submit"
+                type="submit"
+                aria-label="Search posts"
+                title="Search posts">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <circle cx="10.8" cy="10.8" r="6.8"></circle>
+            <path d="m16 16 4.5 4.5"></path>
+          </svg>
+        </button>
+        <a class="btn btn-outline-secondary"
+           href="{{ url_for('user_post_page', user_id=user.id) }}">Clear</a>
+      </div>
+    </div>
+  </form>
   {% for post in posts %}
     <article class="content-section py-3 px-4 mb-4">
       <div class="article-metadata mb-2">
@@ -25,11 +78,24 @@
         <a class="article-title"
            href="{{ url_for('post_page', post_id=post.id) }}">{{ post.title }}</a>
       </h3>
-      <p class="article-content mb-0">{{ post.content }}</p>
+      <p class="article-content mb-0">{{ post.excerpt }}</p>
+      {% if post.category or post.tags %}
+        <div class="d-flex flex-wrap gap-2 mt-2">
+          {% if post.category %}
+            <a class="badge text-bg-secondary"
+               href="{{ url_for('home') }}?category={{ post.category.slug }}">{{ post.category.name }}</a>
+          {% endif %}
+          {% for tag in post.tags %}
+            <a class="badge text-bg-light border"
+               href="{{ url_for('home') }}?tag={{ tag.slug }}">#{{ tag.name }}</a>
+          {% endfor %}
+        </div>
+      {% endif %}
     </article>
   {% else %}
     <div class="content-section py-3 px-4 mb-4">
       <p class="text-body-secondary mb-0">This user has not published any posts yet.</p>
     </div>
   {% endfor %}
+  {% include "_pagination.html" %}
 {% endblock content %}

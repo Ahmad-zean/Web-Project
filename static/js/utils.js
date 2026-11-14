@@ -47,9 +47,17 @@ document.querySelectorAll("form[data-api-url]").forEach((form) => {
 
     try {
       const payload = Object.fromEntries(new FormData(form).entries());
+      const csrfToken = payload.csrf_token;
+      delete payload.csrf_token;
+      if (typeof payload.tags === "string") {
+        payload.tags = payload.tags.split(",").map((tag) => tag.trim()).filter(Boolean);
+      }
       const response = await fetch(form.dataset.apiUrl, {
         method: form.dataset.apiMethod,
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(csrfToken ? { "X-CSRF-Token": csrfToken } : {}),
+        },
         body: JSON.stringify(payload),
       });
       const result = await readApiResponse(response);

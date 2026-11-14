@@ -9,6 +9,7 @@
     {% endif %}
 
     <form action="{{ url_for('submit_register_page') }}" method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <div class="mb-3">
         <label for="username" class="form-label">Username</label>
         <input id="username"

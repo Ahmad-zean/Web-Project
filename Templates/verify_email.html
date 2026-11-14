@@ -1,0 +1,21 @@
+{% extends "layout.html" %}
+{% block content %}
+  <section class="content-section py-4 px-4 mb-4">
+    <h1 class="h2 mb-3">Verify email</h1>
+    {% if verified %}
+      <div class="alert alert-success" role="status">Your email is verified. You can now sign in.</div>
+      <a class="btn btn-primary" href="{{ url_for('login_page') }}">Sign in</a>
+    {% elif valid %}
+      <p class="text-body-secondary">Confirm your email address to activate your account.</p>
+      <form action="{{ url_for('submit_verify_email_page', token=token) }}" method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button type="submit" class="btn btn-primary">Verify email address</button>
+      </form>
+    {% else %}
+      <div class="alert alert-warning" role="status">
+        This verification link is invalid, expired, or already used.
+      </div>
+      <a href="{{ url_for('check_email_page') }}">Request another verification email</a>
+    {% endif %}
+  </section>
+{% endblock content %}

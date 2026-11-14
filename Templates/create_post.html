@@ -15,6 +15,7 @@
           data-api-url="{{ request.url_for('create_post') }}"
           data-api-method="POST"
           data-redirect-template="{{ request.url_for('post_page', post_id=0) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <div class="mb-3">
         <label for="title" class="form-label">Title</label>
         <input id="title"
@@ -33,6 +34,38 @@
                   rows="8"
                   maxlength="1000"
                   required>{{ content }}</textarea>
+      </div>
+      <div class="mb-3">
+        <label for="summary" class="form-label">Summary (optional)</label>
+        <textarea id="summary"
+                  name="summary"
+                  class="form-control"
+                  rows="2"
+                  maxlength="240">{{ summary }}</textarea>
+      </div>
+      <div class="mb-3">
+        <label for="category" class="form-label">Category (optional)</label>
+        <input id="category"
+               name="category"
+               type="text"
+               class="form-control"
+               maxlength="50"
+               list="category-options"
+               value="{{ category }}">
+        <datalist id="category-options">
+          {% for item in categories %}<option value="{{ item.name }}">{% endfor %}
+        </datalist>
+      </div>
+      <div class="mb-3">
+        <label for="tags" class="form-label">Tags (comma-separated, up to 10)</label>
+        <input id="tags"
+               name="tags"
+               type="text"
+               class="form-control"
+               maxlength="450"
+               value="{{ tags }}"
+               aria-describedby="tags-help">
+        <div id="tags-help" class="form-text">For example: FastAPI, Python, Web</div>
       </div>
       <button type="submit" class="btn btn-primary">Publish post</button>
     </form>

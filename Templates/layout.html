@@ -43,7 +43,7 @@
           crossorigin="anonymous">
 
     <!-- Stylesheet -->
-    <link rel="stylesheet" type="text/css" href="/static/css/main.css">
+    <link rel="stylesheet" type="text/css" href="/static/css/main.css?v=3">
 
     <!-- Set a theme color that matches your website's primary color -->
     <meta name="theme-color" content="#527c9f">
@@ -87,6 +87,7 @@
                 <span class="navbar-text me-md-3">{{ request.state.current_user.username }}</span>
                 <a class="nav-link me-md-3" href="{{ url_for('account_page') }}">Account</a>
                 <form action="{{ url_for('logout') }}" method="post" class="d-inline">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                   <button type="submit" class="nav-link border-0 bg-transparent">Logout</button>
                 </form>
               {% else %}

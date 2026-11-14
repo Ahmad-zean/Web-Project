@@ -16,6 +16,7 @@
     <form action="{{ url_for('update_account_page') }}"
           method="post"
           enctype="multipart/form-data">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <div class="mb-4">
         <label class="form-label" for="profile_picture">Profile picture</label>
         <div class="d-flex align-items-center gap-3 mb-2">
@@ -62,6 +63,7 @@
     <form action="{{ url_for('update_account_page') }}"
           method="post"
           enctype="multipart/form-data">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <input type="hidden" name="username" value="{{ username }}">
       <input type="hidden" name="email" value="{{ email }}">
       <div class="mb-3">
